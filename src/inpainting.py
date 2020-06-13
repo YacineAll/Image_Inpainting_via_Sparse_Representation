@@ -17,6 +17,23 @@ import requests
 from sklearn.linear_model import Lasso
 from tqdm import tqdm
 
+import random
+
+
+def add_noise(img: np.ndarray, threshold: float = 0.05):
+    """ Add random noise to the picture.
+    :param threshold: Chance of each pixel to be noisyfied.
+    """
+    pixels = img.copy()
+    height, width, d = pixels.shape
+
+    for x in range(height):
+        for y in range(width):
+            pixels[x, y] = np.ones(
+                3)*-100 if random.random() < threshold else pixels[x, y]
+
+    return pixels
+
 
 def is_out_of_bounds(pixels, x, y):
     return not (0 <= x < pixels.shape[0] and 0 <= y < pixels.shape[1])
@@ -25,7 +42,8 @@ def is_out_of_bounds(pixels, x, y):
 def noise(img, prc):
     l, w, d = img.shape
     new_img = img.copy().ravel()
-    new_img[np.random.choice([False, True], l*w*d, p = [1-prc, prc])] = -100
+    new_img[np.random.choice(
+        [False, True], l*w, p=[1-prc, prc]):] = np.ones(3)*-100
     return new_img.reshape((l, w, d))
 
 
@@ -33,6 +51,7 @@ def delete_rect(img, i, j, height, width):
     new_img = img.copy()
     new_img[i:i+height, j:j+width] = np.ones((height, width, 3))*-100
     return new_img
+
 
 
 def change_color(pixels, color_src: str, color_dest: str):
@@ -105,7 +124,7 @@ class Patch(object):
     def iter_patch_empty(self, x: int, y: int):
         for index_x, index_y in self.iter_patch(x, y):
             if not is_out_of_bounds(self.pixels, index_x, index_y):
-                if all(self.pixels[index_x, index_y] == -100):
+                if any(self.pixels[index_x, index_y] == -100):
                     yield index_x, index_y
 
     def get_dictionary(self):
@@ -120,14 +139,8 @@ class Patch(object):
         return np.array(result)
 
     def get_next_patch(self):
-        # TODO: Implement this heuristic
-        # pixels_confidence = _get_pixels_confidence(self.pixels, value_missing_pixel)
-        # patches_priorities = {(x, y): patch_priority(self.pixels, pixels_confidence, x, y, size, 
-        #                                              value_out_of_bounds, value_missing_pixel) \
-        #                                              for (x, y) in picture.get_patches()}
-        # return max(patches_priorities.keys(), key = lambda k: patches_priorities[k])
-
-        missing_pixels_x, missing_pixels_y, *_ = np.where(self.pixels == -100)
+        missing_pixels_x, missing_pixels_y, * \
+            _ = np.where(self.pixels[:, :, 0] == -100)
         return zip(missing_pixels_x, missing_pixels_y)
 
 
@@ -142,87 +155,113 @@ class Inpainting(object):
         self.pixels = pixels
         self.patch_object = Patch(pixels, patch_size, step)
 
-        classifiers_kwaargs = {"alpha": alpha, "copy_X": True, "fit_intercept": True, "max_iter": max_iterations, 
-                               "normalize": False, "positive": False, "precompute": False, "random_state": None, 
+        classifiers_kwaargs = {"alpha": alpha, "copy_X": True, "fit_intercept": True, "max_iter": max_iterations,
+                               "normalize": False, "positive": False, "precompute": False, "random_state": None,
                                "selection": 'cyclic', "tol": tolerance, "warm_start": False}
         self.classifier_H = Lasso(**classifiers_kwaargs)
         self.classifier_S = Lasso(**classifiers_kwaargs)
         self.classifier_V = Lasso(**classifiers_kwaargs)
 
-    def fit(self, dictionary, patch):
-        X_H, X_S, X_V, y_H, y_S, y_V = self.preprocess_training_data(
-            patch, dictionary)
-        self.classifier_H.fit(X_H, y_H)
-        self.classifier_S.fit(X_S, y_S)
-        self.classifier_V.fit(X_V, y_V)
-
-    def preprocess_training_data(self, patch, dictionary):
-        X_H, X_S, X_V, y_H, y_S, y_V = [
-        ], [], [], [], [], []
+    def preprocess_training_data(self, patch):
+        
+        X_H = []
+        X_S = []
+        X_V = []
+        y_H = []
+        y_S = []
+        y_V = []
+        boolean = False
         for x in range(self.patch_size):
             for y in range(self.patch_size):
                 try:
                     if np.all(patch[x, y] != -100) and np.all(patch[x, y] != -1000):
-                        X_H.append(dictionary[:, x, y, 0])
-                        X_S.append(dictionary[:, x, y, 1])
-                        X_V.append(dictionary[:, x, y, 2])
-                        y_H.append(patch[x, y, 0])
-                        y_S.append(patch[x, y, 1])
-                        y_V.append(patch[x, y, 2])
-                except IndexError as e:
-                    # print(patch.shape)
+                        if boolean:
+                            X_H = np.hstack((X_H, self.dictionary[:, x, y, 0]))
+                            X_S = np.hstack((X_S, self.dictionary[:, x, y, 1]))
+                            X_V = np.hstack((X_V, self.dictionary[:, x, y, 2]))
+                            y_H = np.hstack((y_H, patch[x, y, 0]))
+                            y_S = np.hstack((y_S, patch[x, y, 1]))
+                            y_V = np.hstack((y_V, patch[x, y, 2]))
+                        else:
+                            boolean = True
+                            X_H = self.dictionary[:, x, y, 0]
+                            X_S = self.dictionary[:, x, y, 1]
+                            X_V = self.dictionary[:, x, y, 2]
+                            y_H = patch[x, y, 0]
+                            y_S = patch[x, y, 1]
+                            y_V = patch[x, y, 2]
+                except IndexError:                    
                     pass
 
-        return np.array(X_H), np.array(X_S), np.array(X_V), np.array(y_H), np.array(y_S), np.array(y_V)
+        return X_H, X_S, X_V, y_H, y_S, y_V
 
-    def predict(self, x, y, dictionary):
-        H = self.classifier_H.predict(dictionary[:, x, y, 0].reshape(1, -1))
-        S = self.classifier_S.predict(dictionary[:, x, y, 1].reshape(1, -1))
-        V = self.classifier_V.predict(dictionary[:, x, y, 2].reshape(1, -1))
+    def predict(self, x, y):
+        H = self.classifier_H.predict(
+            self.dictionary[:, x, y, 0].reshape(1, -1))
+        S = self.classifier_S.predict(
+            self.dictionary[:, x, y, 1].reshape(1, -1))
+        V = self.classifier_V.predict(
+            self.dictionary[:, x, y, 2].reshape(1, -1))
         return np.hstack((H, S, V))
 
-    def inpaint_fit(self):
-        dictionary = self.patch_object.get_dictionary()
-        patchs = list(self.patch_object.get_next_patch())
-        for i, j in tqdm(patchs, total = len(patchs)):
-            next_patch = self.patch_object.get_patch(i, j)
-            self.fit(dictionary, next_patch)
-            print("yacine")
+    def inpaint(self):
 
-    def inpaint_predict(self):
-        new_img = self.pixels.copy()
-        dictionary = self.patch_object.get_dictionary()
-        patchs = list(self.patch_object.get_next_patch())
-        for i, j in tqdm(patchs, total = len(patchs)):
-            for x, y in self.patch_object.iter_patch_empty(i, j):
-                next_pixel_value = self.predict(x - i + (self.patch_object.size // 2), 
-                                                y - j +
-                                                (self.patch_object.size // 2), 
-                                                dictionary)
-                new_img[x, y] = next_pixel_value
+        out = self.pixels.copy()
 
-        return new_img
+        X_h, X_s, X_v, y_h, y_s, y_v = self.get_training_data()
+        print(f'Donnees d\'entrainement recolté...')
+
+        self.classifier_H.fit(X_h, y_h)
+        print(f'Model 1 entrainé...')
+        self.classifier_S.fit(X_s, y_s)
+        print(f'Model 2 entrainé...')
+        self.classifier_V.fit(X_v, y_v)
+        print(f'Model 3 entrainé...')
+
+        print(f'Les models sont entranés...')
+
+        print(f'Predictions...')
+
+    def predictions(self):
+        out = self.pixels.copy()
+        for next_pixel in self.patch_object.get_next_patch():
+            for x, y in self.patch_object.iter_patch_empty(*next_pixel):
+                next_pixel_value = self.predict(x - next_pixel[0] + (self.patch_size // 2),
+                                                y - next_pixel[1] +
+                                                (self.patch_size // 2))
+                out[x, y] = next_pixel_value
+        return out
 
     def get_training_data(self):
-        dictionary = self.patch_object.get_dictionary()
+        self.dictionary = self.patch_object.get_dictionary()
         X_h, X_s, X_v, y_h, y_s, y_v = [], [], [], [], [], []
         boolean = False
-        for i,j in self.patch_object.get_next_patch() :
-            patch  = self.patch_object.get_patch(i,j)
+        next_patchs = self.patch_object.get_next_patch()
+        for i, j in tqdm(next_patchs):
+            patch = self.patch_object.get_patch(i, j)
             if(boolean):
                 X_H, X_S, X_V, y_H, y_S, y_V = self.preprocess_training_data(
-                    patch, dictionary)
+                    patch)
+
                 X_h = np.vstack((X_h, X_H))
-                X_S = np.vstack((X_s, X_S))
-                X_V = np.vstack((X_v, X_V))
-            
-                y_h = np.concatenate((y_h, y_H)) 
-                y_s = np.concatenate((y_s, y_S))
-                y_v = np.concatenate((y_v, y_V))
+                X_s = np.vstack((X_s, X_S))
+                X_v = np.vstack((X_v, X_V))
+
+                y_h = np.hstack((y_h, y_H))
+                y_s = np.hstack((y_s, y_S))
+                y_v = np.hstack((y_v, y_V))
             else:
-                X_h, X_s, X_v, y_h, y_s, y_v = self.preprocess_training_data(patch, dictionary)
+                X_h, X_s, X_v, y_h, y_s, y_v = self.preprocess_training_data(
+                    patch)
             boolean = True
         return X_h, X_s, X_v, y_h, y_s, y_v
 
-    
-    
+
+if __name__ == "__main__":
+    from sklearn.datasets import load_sample_image
+    china_image = load_sample_image("china.jpg")
+    img = change_color(china_image, "RGB", "HSV")
+    new_img = add_noise(img, threshold=0.0001)
+    obj = Inpainting(new_img, patch_size=5)
+    obj.inpaint()
+    out = obj.predictions()
