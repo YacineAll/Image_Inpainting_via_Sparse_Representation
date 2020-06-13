@@ -53,7 +53,6 @@ def delete_rect(img, i, j, height, width):
     return new_img
 
 
-
 def change_color(pixels, color_src: str, color_dest: str):
 
     if color_src == color_dest:
@@ -128,12 +127,13 @@ class Patch(object):
                     yield index_x, index_y
 
     def get_dictionary(self):
+        shape_p = (self.size,self.size,3)
         result = []
         for i in range(0, self.pixels.shape[0], self.step):
             for j in range(0, self.pixels.shape[1], self.step):
                 if not is_out_of_bounds(self.pixels, i, j):
                     patch = self.get_patch(i, j)
-                    if(np.all(patch != -100) and np.all(patch != -1000)):
+                    if(np.all(patch != -100) and np.all(patch != -1000) and patch.shape == shape_p):
                         result.append(patch)
 
         return np.array(result)
@@ -163,37 +163,81 @@ class Inpainting(object):
         self.classifier_V = Lasso(**classifiers_kwaargs)
 
     def preprocess_training_data(self, patch):
-        
+        boolean = False
         X_H = []
         X_S = []
         X_V = []
         y_H = []
         y_S = []
         y_V = []
+        for x in range(self.patch_size):
+            for y in range(self.patch_size):
+                if np.all(patch[x, y] != -100) and np.all(patch[x, y] != -1000):
+                    if boolean:
+                        X_H = np.hstack((X_H, self.dictionary[:, x, y, 0]))
+                        X_S = np.hstack((X_S, self.dictionary[:, x, y, 1]))
+                        X_V = np.hstack((X_V, self.dictionary[:, x, y, 2]))
+                        y_H = np.hstack((y_H, patch[x, y, 0]))
+                        y_S = np.hstack((y_S, patch[x, y, 1]))
+                        y_V = np.hstack((y_V, patch[x, y, 2]))
+                    else:
+                        X_H = self.dictionary[:, x, y, 0]
+                        X_S = self.dictionary[:, x, y, 1]
+                        X_V = self.dictionary[:, x, y, 2]
+                        y_H = patch[x, y, 0]
+                        y_S = patch[x, y, 1]
+                        y_V = patch[x, y, 2]
+                        boolean = True
+
+        return X_H, X_S, X_V, y_H, y_S, y_V
+    
+    
+    def preprocess_training_data2(self, patch):
+        datax_hue, datax_saturation, datax_value, datay_hue, datay_saturation, datay_value = [], [], [], [], [], []
+
+        # Iterate trough each pixels of the patch to inpaint
+        for x in range(self.patch_size):
+            for y in range(self.patch_size):
+                # Ignore missing-pixels in the patch, we cannot learn from them
+                if np.all(patch[x, y] != -100) and np.all(patch[x, y] != -1000):
+                    datax_hue.append(self.dictionary[:, x, y, 0])
+                    datax_saturation.append(self.dictionary[:, x, y, 1])
+                    datax_value.append(self.dictionary[:, x, y, 2])
+                    datay_hue.append(patch[x, y, 0])
+                    datay_saturation.append(patch[x, y, 1])
+                    datay_value.append(patch[x, y, 2])
+
+        return np.array(datax_hue), np.array(datax_saturation), \
+            np.array(datax_value), np.array(datay_hue), \
+            np.array(datay_saturation), np.array(datay_value)
+    
+    
+    def X(self, patch):
+        X_h, X_s, X_v = [], [], []
+        datay_hue, datay_saturation, datay_value = [], [], []
+        
         boolean = False
         for x in range(self.patch_size):
             for y in range(self.patch_size):
                 try:
                     if np.all(patch[x, y] != -100) and np.all(patch[x, y] != -1000):
-                        if boolean:
-                            X_H = np.hstack((X_H, self.dictionary[:, x, y, 0]))
-                            X_S = np.hstack((X_S, self.dictionary[:, x, y, 1]))
-                            X_V = np.hstack((X_V, self.dictionary[:, x, y, 2]))
-                            y_H = np.hstack((y_H, patch[x, y, 0]))
-                            y_S = np.hstack((y_S, patch[x, y, 1]))
-                            y_V = np.hstack((y_V, patch[x, y, 2]))
-                        else:
-                            boolean = True
-                            X_H = self.dictionary[:, x, y, 0]
-                            X_S = self.dictionary[:, x, y, 1]
-                            X_V = self.dictionary[:, x, y, 2]
-                            y_H = patch[x, y, 0]
-                            y_S = patch[x, y, 1]
-                            y_V = patch[x, y, 2]
-                except IndexError:                    
-                    pass
+                        datay_hue.append(patch[x, y, 0])
+                        datay_saturation.append(patch[x, y, 1])
+                        datay_value.append(patch[x, y, 2])
 
-        return X_H, X_S, X_V, y_H, y_S, y_V
+                        if(boolean):                
+                            X_h = np.vstack((X_h,self.dictionary[:, x, y, 0]))
+                            X_s = np.vstack((X_s,self.dictionary[:, x, y, 1])) 
+                            X_v = np.vstack((X_v,self.dictionary[:, x, y, 2])) 
+                        else:
+                            X_h = self.dictionary[:, x, y, 0]
+                            X_s = self.dictionary[:, x, y, 1]
+                            X_v = self.dictionary[:, x, y, 2]
+                            boolean = True
+                except IndexError:
+                    pass
+                
+        return X_h, X_s, X_v, np.array(datay_hue), np.array(datay_saturation), np.array(datay_value)
 
     def predict(self, x, y):
         H = self.classifier_H.predict(
@@ -235,14 +279,17 @@ class Inpainting(object):
     def get_training_data(self):
         self.dictionary = self.patch_object.get_dictionary()
         X_h, X_s, X_v, y_h, y_s, y_v = [], [], [], [], [], []
+        
+        
         boolean = False
         next_patchs = self.patch_object.get_next_patch()
         for i, j in tqdm(next_patchs):
             patch = self.patch_object.get_patch(i, j)
             if(boolean):
-                X_H, X_S, X_V, y_H, y_S, y_V = self.preprocess_training_data(
-                    patch)
-
+                
+                X_H, X_S, X_V, y_H, y_S, y_V = self.X(patch)
+                
+                
                 X_h = np.vstack((X_h, X_H))
                 X_s = np.vstack((X_s, X_S))
                 X_v = np.vstack((X_v, X_V))
@@ -251,11 +298,9 @@ class Inpainting(object):
                 y_s = np.hstack((y_s, y_S))
                 y_v = np.hstack((y_v, y_V))
             else:
-                X_h, X_s, X_v, y_h, y_s, y_v = self.preprocess_training_data(
-                    patch)
-            boolean = True
-        return X_h, X_s, X_v, y_h, y_s, y_v
-
+                X_h, X_s, X_v, y_h, y_s, y_v = self.preprocess_training_data2(patch)
+                boolean = True
+        return X_h, X_s, X_v, y_h, y_s, y_v 
 
 if __name__ == "__main__":
     from sklearn.datasets import load_sample_image
