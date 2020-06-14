@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
 from sklearn.linear_model import Lasso
+from sklearn.utils.testing import ignore_warnings
+from sklearn.exceptions import ConvergenceWarning
 
 import numpy as np
 
@@ -187,6 +189,7 @@ def build_dict(img, h, step):
 
 #         fill_patch(y, center, img)
 
+@ignore_warnings(category=ConvergenceWarning)
 def inpainting(img, h, step, alpha=1e-4, max_iter=5000000):
     """Function to inpainting the given image and predict the missing pixels values with Lasso regression.
 
