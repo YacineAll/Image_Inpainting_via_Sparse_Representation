@@ -10,3 +10,11 @@ L’analyse en composante principale (ACP) est un exemple de ce type de décompo
 ![Image of Lenna](https://github.com/YacineAll/Image_Inpainting_via_Sparse_Representation/raw/master/output/lennaNoised.png)
 ### Reconstruction d'une région:
 ![Image of Reconstruct](https://github.com/YacineAll/Image_Inpainting_via_Sparse_Representation/raw/master/output/regionReconstructed.png)
+
+## Discussion:
+### Avantages:
+* Cela donne de très bons résultats qui sont réalistes pour nous, il suffit de faire un bon réglage des paramètres.
+* Modèle simple à comprendre, intuitif et interprétable.
+### Inconvénients:
+* Il est très lent à exécuter même avec de petites images (300, 300), il a donc une complexité médiocre.
+* Plus la résolution et la qualité de l'image sont élevées, plus les résultats sont mauvais.
