@@ -6,5 +6,7 @@ L’*inpainting* en image s’attache à la reconstruction d’images détérior
 L’analyse en composante principale (ACP) est un exemple de ce type de décomposition, mais du fait des contraintes d’orthogonalité, les atomes (ou la base canonique) ainsi inférés ne sont pas redondants - chacun représente le plus d’information possible et la reconstitution du signal est unique.Dans le cas de l’*inpainting*, l’objectif est au contraire d’obtenir un dictionnaire fortement redondant. La difficulté est donc double : réussir à construire un dictionnaire d’atomes - les signaux élémentaires - et trouver un algorithme de décomposition/recomposition d’un signal à partir des atomes du dictionnaire,i.e. trouver des poids parcimonieux sur chaque atome tels que la combinaison linéaire des atomes permette d’approcher le signal d’origine. Ici, nous étudions essentiellement une solution pour la deuxième problématique - la reconstruction - à l’aide de l’algorithme du LASSO.
 
 ## Résultats:
-### image Bruité:
+### Image Bruité:
 ![Image of Lenna](https://github.com/YacineAll/Image_Inpainting_via_Sparse_Representation/raw/master/output/lennaNoised.png)
+### Reconstruction d'une région:
+![Image of Reconstruct](https://github.com/YacineAll/Image_Inpainting_via_Sparse_Representation/raw/master/output/regionReconstructed.png)
