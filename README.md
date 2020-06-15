@@ -7,4 +7,4 @@ L’analyse en composante principale (ACP) est un exemple de ce type de décompo
 
 ## Résultats:
 ### image Bruité:
-![Image of Lenna] (https://github.com/YacineAll/Image_Inpainting_via_Sparse_Representation/raw/master/output/lennaNoised.png)
+![Image of Lenna](https://github.com/YacineAll/Image_Inpainting_via_Sparse_Representation/raw/master/output/lennaNoised.png)
